@@ -11,6 +11,7 @@
 #include <QProcess>
 #include <QTime>
 
+#ifndef Q_OS_WIN
 #include <linux/input.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -23,6 +24,19 @@
 #include <wayland-client.h>
 
 #include "wayland-virtual-keyboard-client-protocol.h"
+#endif
+
+#ifdef Q_OS_WIN
+// Windows stub — VirtualKeyboardInjector is Wayland/Linux only
+bool VirtualKeyboardInjector::isAvailable() { return false; }
+VirtualKeyboardInjector::VirtualKeyboardInjector(QObject *parent) : QObject(parent) {}
+VirtualKeyboardInjector::~VirtualKeyboardInjector() = default;
+void VirtualKeyboardInjector::sendText(const QString &) {}
+void VirtualKeyboardInjector::sendKeycode(int, bool) {}
+void VirtualKeyboardInjector::sendCharacter(QChar) {}
+void VirtualKeyboardInjector::sendSpecialKey(int) {}
+void VirtualKeyboardInjector::setModifiers(bool, bool, bool, bool) {}
+#else
 
 // Same key mapping as used by the mousepad plugin, matching all existing implementations
 static const int SpecialKeysMap[] = {
@@ -424,3 +438,4 @@ void VirtualKeyboardInjector::sendSpecialKey(int specialKey)
     zwp_virtual_keyboard_v1_key(m_virtualKeyboard, time + 1, keycode, WL_KEYBOARD_KEY_STATE_RELEASED);
     wl_display_flush(m_display);
 }
+#endif
