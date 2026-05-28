@@ -28,14 +28,30 @@
 
 #ifdef Q_OS_WIN
 // Windows stub — VirtualKeyboardInjector is Wayland/Linux only
-bool VirtualKeyboardInjector::isAvailable() { return false; }
-VirtualKeyboardInjector::VirtualKeyboardInjector(QObject *parent) : QObject(parent) {}
+bool VirtualKeyboardInjector::isAvailable()
+{
+    return false;
+}
+VirtualKeyboardInjector::VirtualKeyboardInjector(QObject *parent)
+    : QObject(parent)
+{
+}
 VirtualKeyboardInjector::~VirtualKeyboardInjector() = default;
-void VirtualKeyboardInjector::sendText(const QString &) {}
-void VirtualKeyboardInjector::sendKeycode(int, bool) {}
-void VirtualKeyboardInjector::sendCharacter(QChar) {}
-void VirtualKeyboardInjector::sendSpecialKey(int) {}
-void VirtualKeyboardInjector::setModifiers(bool, bool, bool, bool) {}
+void VirtualKeyboardInjector::sendText(const QString &)
+{
+}
+void VirtualKeyboardInjector::sendKeycode(int, bool)
+{
+}
+void VirtualKeyboardInjector::sendCharacter(QChar)
+{
+}
+void VirtualKeyboardInjector::sendSpecialKey(int)
+{
+}
+void VirtualKeyboardInjector::setModifiers(bool, bool, bool, bool)
+{
+}
 #else
 
 // Same key mapping as used by the mousepad plugin, matching all existing implementations
@@ -112,7 +128,7 @@ bool VirtualKeyboardInjector::isAvailable()
         }
     };
 
-    auto globalRemoveCb = [](void *, struct wl_registry *, uint32_t) {};
+    auto globalRemoveCb = [](void *, struct wl_registry *, uint32_t) { };
 
     static const wl_registry_listener listener = {globalCb, globalRemoveCb};
     wl_registry_add_listener(registry, &listener, &data);
