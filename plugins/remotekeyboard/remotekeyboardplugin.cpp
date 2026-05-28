@@ -12,8 +12,21 @@
 #include <QKeySequence>
 #include <QString>
 #include <QVariantMap>
-#ifdef Q_OS_UNIX
-#include <linux/input.h>
+
+// Key constants for virtual keyboard modifier injection.
+// These match linux/input.h values but are defined here to avoid
+// platform-specific includes (Windows doesn't have linux/input.h).
+#ifndef KEY_LEFTCTRL
+#define KEY_LEFTCTRL 29
+#endif
+#ifndef KEY_LEFTSHIFT
+#define KEY_LEFTSHIFT 42
+#endif
+#ifndef KEY_LEFTALT
+#define KEY_LEFTALT 56
+#endif
+#ifndef KEY_LEFTMETA
+#define KEY_LEFTMETA 125
 #endif
 
 K_PLUGIN_CLASS_WITH_JSON(RemoteKeyboardPlugin, "kdeconnect_remotekeyboard.json")
