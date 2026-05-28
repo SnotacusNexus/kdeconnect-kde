@@ -128,7 +128,7 @@ bool VirtualKeyboardInjector::isAvailable()
         }
     };
 
-    auto globalRemoveCb = [](void *, struct wl_registry *, uint32_t) { };
+    auto globalRemoveCb = [](void *, struct wl_registry *, uint32_t) {};
 
     static const wl_registry_listener listener = {globalCb, globalRemoveCb};
     wl_registry_add_listener(registry, &listener, &data);
