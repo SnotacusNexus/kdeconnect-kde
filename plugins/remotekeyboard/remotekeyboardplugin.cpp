@@ -12,7 +12,9 @@
 #include <QKeySequence>
 #include <QString>
 #include <QVariantMap>
+#ifdef Q_OS_UNIX
 #include <linux/input.h>
+#endif
 
 K_PLUGIN_CLASS_WITH_JSON(RemoteKeyboardPlugin, "kdeconnect_remotekeyboard.json")
 
