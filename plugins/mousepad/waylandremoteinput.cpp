@@ -128,8 +128,8 @@ RemoteDesktopSession::RemoteDesktopSession()
 
 void RemoteDesktopSession::createSession()
 {
-    if (isValid()) {
-        qCDebug(KDECONNECT_PLUGIN_MOUSEPAD) << "pass, already created";
+    if (isValid() || m_connecting) {
+        qCDebug(KDECONNECT_PLUGIN_MOUSEPAD) << "pass, already created or connecting";
         return;
     }
 

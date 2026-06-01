@@ -25,7 +25,7 @@ public:
     void createSession();
     bool isValid() const
     {
-        return m_connecting || !m_xdpPath.path().isEmpty();
+        return !m_xdpPath.path().isEmpty();
     }
     OrgFreedesktopPortalRemoteDesktopInterface *const iface;
     QDBusObjectPath m_xdpPath;
