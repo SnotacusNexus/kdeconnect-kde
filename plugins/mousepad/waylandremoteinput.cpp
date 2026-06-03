@@ -63,6 +63,16 @@ int SpecialKeysMap[] = {
 
 Q_GLOBAL_STATIC(RemoteDesktopSession, s_session);
 
+static QString computeRequestPath(const QString &handleToken)
+{
+    // Portal builds the request path by replacing ':' -> '_' and '.' -> '_' in the unique bus name.
+    // See org.freedesktop.portal.Request.xml for the path format specification.
+    const QString ourBusName = QDBusConnection::sessionBus().baseService();
+    QString sender = ourBusName.mid(1); // strip leading ':'
+    sender.replace(QLatin1Char('.'), QLatin1Char('_'));
+    return QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, handleToken);
+}
+
 class Xkb
 {
 public:
@@ -138,23 +148,35 @@ void RemoteDesktopSession::createSession()
     // create session
     const auto handleToken = QStringLiteral("kdeconnect%1").arg(QRandomGenerator::global()->generate());
     const auto sessionParameters = QVariantMap{{QLatin1String("session_handle_token"), handleToken}, {QLatin1String("handle_token"), handleToken}};
+
+    // Pre-subscribe to the Response signal. The portal emits the Response signal
+    // on the request path BEFORE returning from CreateSession. If we subscribe
+    // after the call, we may miss the signal.
+    const QString expectedPath = computeRequestPath(handleToken);
+    if (!QDBusConnection::sessionBus().connect(QString(),
+                                               expectedPath,
+                                               QLatin1String("org.freedesktop.portal.Request"),
+                                               QLatin1String("Response"),
+                                               this,
+                                               SLOT(handleXdpSessionCreated(uint, QVariantMap)))) {
+        qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Failed to pre-subscribe to Response signal on" << expectedPath;
+    }
+
     auto sessionReply = iface->CreateSession(sessionParameters);
     QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(sessionReply);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, sessionReply](QDBusPendingCallWatcher *self) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, sessionReply, expectedPath](QDBusPendingCallWatcher *self) {
         self->deleteLater();
         if (sessionReply.isError()) {
             qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Could not create the remote control session" << sessionReply.error();
+            QDBusConnection::sessionBus().disconnect(QString(),
+                                                     expectedPath,
+                                                     QLatin1String("org.freedesktop.portal.Request"),
+                                                     QLatin1String("Response"),
+                                                     this,
+                                                     SLOT(handleXdpSessionCreated(uint, QVariantMap)));
             m_connecting = false;
             return;
         }
-
-        bool b = QDBusConnection::sessionBus().connect(QString(),
-                                                       sessionReply.value().path(),
-                                                       QLatin1String("org.freedesktop.portal.Request"),
-                                                       QLatin1String("Response"),
-                                                       this,
-                                                       SLOT(handleXdpSessionCreated(uint, QVariantMap)));
-        Q_ASSERT(b);
 
         qCDebug(KDECONNECT_PLUGIN_MOUSEPAD) << "authenticating" << sessionReply.value().path();
     });
@@ -170,7 +192,6 @@ void RemoteDesktopSession::handleXdpSessionCreated(uint code, const QVariantMap 
     m_connecting = false;
     m_xdpPath = QDBusObjectPath(results.value(QLatin1String("session_handle")).toString());
     QVariantMap startParameters = {
-        {QLatin1String("handle_token"), QStringLiteral("kdeconnect%1").arg(QRandomGenerator::global()->generate())},
         {QStringLiteral("types"), QVariant::fromValue<uint>(7)}, // request all (KeyBoard, Pointer, TouchScreen)
         {QLatin1String("persist_mode"), QVariant::fromValue<uint>(2)}, // Persist permission until explicitly revoked by user
     };
@@ -188,23 +209,35 @@ void RemoteDesktopSession::handleXdpSessionCreated(uint code, const QVariantMap 
                                           this,
                                           SLOT(handleXdpSessionFinished(uint, QVariantMap)));
 
+    // Pre-subscribe to SelectDevices response
+    const QString devHandleToken = QStringLiteral("kdeconnect%1").arg(QRandomGenerator::global()->generate());
+    startParameters[QLatin1String("handle_token")] = devHandleToken;
+    const QString devExpectedPath = computeRequestPath(devHandleToken);
+    if (!QDBusConnection::sessionBus().connect(QString(),
+                                               devExpectedPath,
+                                               QLatin1String("org.freedesktop.portal.Request"),
+                                               QLatin1String("Response"),
+                                               this,
+                                               SLOT(handleXdpSessionConfigured(uint, QVariantMap)))) {
+        qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Failed to pre-subscribe to SelectDevices response";
+    }
+
     auto reply = iface->SelectDevices(m_xdpPath, startParameters);
     QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(reply);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, reply](QDBusPendingCallWatcher *self) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, reply, devExpectedPath](QDBusPendingCallWatcher *self) {
         self->deleteLater();
         if (reply.isError()) {
             qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Could not start the remote control session" << reply.error();
+            QDBusConnection::sessionBus().disconnect(QString(),
+                                                     devExpectedPath,
+                                                     QLatin1String("org.freedesktop.portal.Request"),
+                                                     QLatin1String("Response"),
+                                                     this,
+                                                     SLOT(handleXdpSessionConfigured(uint, QVariantMap)));
             m_connecting = false;
             return;
         }
 
-        bool b = QDBusConnection::sessionBus().connect(QString(),
-                                                       reply.value().path(),
-                                                       QLatin1String("org.freedesktop.portal.Request"),
-                                                       QLatin1String("Response"),
-                                                       this,
-                                                       SLOT(handleXdpSessionConfigured(uint, QVariantMap)));
-        Q_ASSERT(b);
         qCDebug(KDECONNECT_PLUGIN_MOUSEPAD) << "configuring" << reply.value().path();
     });
 }
@@ -216,26 +249,38 @@ void RemoteDesktopSession::handleXdpSessionConfigured(uint code, const QVariantM
         m_connecting = false;
         return;
     }
+
+    // Pre-subscribe to Start response
+    const QString startHandleToken = QStringLiteral("kdeconnect%1").arg(QRandomGenerator::global()->generate());
+    const QString startExpectedPath = computeRequestPath(startHandleToken);
+    if (!QDBusConnection::sessionBus().connect(QString(),
+                                               startExpectedPath,
+                                               QLatin1String("org.freedesktop.portal.Request"),
+                                               QLatin1String("Response"),
+                                               this,
+                                               SLOT(handleXdpSessionStarted(uint, QVariantMap)))) {
+        qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Failed to pre-subscribe to Start response";
+    }
+
     const QVariantMap startParameters = {
-        {QLatin1String("handle_token"), QStringLiteral("kdeconnect%1").arg(QRandomGenerator::global()->generate())},
+        {QLatin1String("handle_token"), startHandleToken},
     };
     auto reply = iface->Start(m_xdpPath, {}, startParameters);
     QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(reply);
-    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, reply](QDBusPendingCallWatcher *self) {
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, reply, startExpectedPath](QDBusPendingCallWatcher *self) {
         self->deleteLater();
         if (reply.isError()) {
             qCWarning(KDECONNECT_PLUGIN_MOUSEPAD) << "Could not start the remote control session" << reply.error();
+            QDBusConnection::sessionBus().disconnect(QString(),
+                                                     startExpectedPath,
+                                                     QLatin1String("org.freedesktop.portal.Request"),
+                                                     QLatin1String("Response"),
+                                                     this,
+                                                     SLOT(handleXdpSessionStarted(uint, QVariantMap)));
             m_connecting = false;
             return;
         }
 
-        bool b = QDBusConnection::sessionBus().connect(QString(),
-                                                       reply.value().path(),
-                                                       QLatin1String("org.freedesktop.portal.Request"),
-                                                       QLatin1String("Response"),
-                                                       this,
-                                                       SLOT(handleXdpSessionStarted(uint, QVariantMap)));
-        Q_ASSERT(b);
         qCDebug(KDECONNECT_PLUGIN_MOUSEPAD) << "starting" << reply.value().path();
     });
 }
